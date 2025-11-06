@@ -1,8 +1,7 @@
-import type { NextApiRequest, NextApiResponse } from "next";
 import * as cheerio from "cheerio";
 
-// Helper: ensure absolute URLs
-function toAbsolute(url: string, base: string) {
+// Ensure absolute URLs
+function toAbsolute(url, base) {
   try {
     return new URL(url, base).toString();
   } catch {
@@ -10,13 +9,13 @@ function toAbsolute(url: string, base: string) {
   }
 }
 
-// Wrap a target URL so it routes through our proxy
-function wrap(url: string) {
+// Wrap target URL so it routes through proxy
+function wrap(url) {
   return `/api/proxy?url=${encodeURIComponent(url)}`;
 }
 
-// Rewrite HTML: make links absolute, then wrap them
-function rewriteHtml(html: string, baseUrl: string) {
+// Rewrite HTML: adjust links/resources
+function rewriteHtml(html, baseUrl) {
   const $ = cheerio.load(html, { decodeEntities: false });
 
   const attrTargets = [
@@ -28,31 +27,31 @@ function rewriteHtml(html: string, baseUrl: string) {
     ["source", "src"],
     ["video", "src"],
     ["audio", "src"],
-    ["form", "action"]
+    ["form", "action"],
   ];
 
   for (const [tag, attr] of attrTargets) {
     $(tag).each((_, el) => {
       const value = $(el).attr(attr);
       if (!value) return;
-
-      // Skip anchors, mailto, javascript: etc.
       if (value.startsWith("#")) return;
       const low = value.toLowerCase();
-      if (low.startsWith("mailto:") || low.startsWith("tel:") || low.startsWith("javascript:")) return;
+      if (
+        low.startsWith("mailto:") ||
+        low.startsWith("tel:") ||
+        low.startsWith("javascript:")
+      )
+        return;
 
       const abs = toAbsolute(value, baseUrl);
-
-      // For forms, we only support GET; force method=GET
       if (tag === "form") {
         $(el).attr("method", "GET");
       }
-
       $(el).attr(attr, wrap(abs));
     });
   }
 
-  // Make all inline CSS url(...) references route through proxy (basic pass)
+  // Inline CSS url(...) references
   $("style").each((_, el) => {
     const css = $(el).html() || "";
     const replaced = css.replace(/url\(([^)]+)\)/g, (match, p1) => {
@@ -64,7 +63,7 @@ function rewriteHtml(html: string, baseUrl: string) {
     $(el).html(replaced);
   });
 
-  // Inject a lightweight toolbar
+  // Inject toolbar
   $("body").prepend(`
     <div id="proxy-bar" style="position:fixed;top:0;left:0;right:0;background:#111;color:#eee;font:14px/1.4 sans-serif;padding:8px;z-index:999999;">
       <form action="/api/proxy" method="GET" style="display:flex;gap:8px;">
@@ -79,9 +78,9 @@ function rewriteHtml(html: string, baseUrl: string) {
   return $.html();
 }
 
-// Pass through selected headers but avoid hop-by-hop or security conflicts
-function filterResponseHeaders(headers: Headers) {
-  const out: Record<string, string> = {};
+// Filter headers
+function filterResponseHeaders(headers) {
+  const out = {};
   const hopByHop = new Set([
     "connection",
     "keep-alive",
@@ -90,38 +89,32 @@ function filterResponseHeaders(headers: Headers) {
     "te",
     "trailer",
     "transfer-encoding",
-    "upgrade"
+    "upgrade",
   ]);
 
   headers.forEach((value, key) => {
     const k = key.toLowerCase();
     if (hopByHop.has(k)) return;
-
-    // Avoid CSP/X-Frame-Options that can block rendering
     if (k === "content-security-policy" || k === "x-frame-options") return;
-
-    // Cookies from origin are ignored in this minimal build
     if (k === "set-cookie") return;
-
     out[key] = value;
   });
 
-  // Always set a content-type fallback
-  if (!Object.keys(out).some(k => k.toLowerCase() === "content-type")) {
+  if (!Object.keys(out).some((k) => k.toLowerCase() === "content-type")) {
     out["Content-Type"] = "text/plain; charset=utf-8";
   }
 
   return out;
 }
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  const target = (req.query.url as string) || "";
+export default async function handler(req, res) {
+  const target = req.query.url || "";
   if (!target) {
     res.status(400).send("Missing ?url= parameter");
     return;
   }
 
-  let url: URL;
+  let url;
   try {
     url = new URL(target);
   } catch {
@@ -129,14 +122,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return;
   }
 
-  // Only allow http/https
   if (!["http:", "https:"].includes(url.protocol)) {
     res.status(400).send("Only http/https supported");
     return;
   }
 
   try {
-    // Forward basic headers; you can add more based on req
     const upstream = await fetch(url.toString(), {
       method: "GET",
       redirect: "follow",
@@ -144,9 +135,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         "user-agent":
           req.headers["user-agent"] ||
           "Mozilla/5.0 (Proxy) AppleWebKit/537.36 (KHTML, like Gecko) Chrome Safari",
-        "accept": req.headers["accept"] || "*/*",
-        "accept-language": req.headers["accept-language"] || "en-US,en;q=0.9"
-      }
+        accept: req.headers["accept"] || "*/*",
+        "accept-language": req.headers["accept-language"] || "en-US,en;q=0.9",
+      },
     });
 
     const status = upstream.status;
@@ -156,7 +147,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const isHtml = contentType.includes("text/html");
 
     if (!isHtml) {
-      // Stream non-HTML responses (images, CSS, JS) directly but still via proxy
       const buf = Buffer.from(await upstream.arrayBuffer());
       res.setHeader("Content-Type", contentType || "application/octet-stream");
       Object.entries(headers).forEach(([k, v]) => res.setHeader(k, v));
@@ -170,7 +160,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     res.setHeader("Content-Type", "text/html; charset=utf-8");
     Object.entries(headers).forEach(([k, v]) => res.setHeader(k, v));
     res.status(status).send(rewritten);
-  } catch (err: any) {
-    res.status(502).send(`Upstream fetch failed: ${err?.message || String(err)}`);
+  } catch (err) {
+    res.status(502).send(`Upstream fetch failed: ${err.message || String(err)}`);
   }
 }
