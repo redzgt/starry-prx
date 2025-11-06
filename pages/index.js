@@ -37,8 +37,8 @@ export default function Home() {
 
   return (
     <main style={{ maxWidth: 720, margin: "0 auto", padding: "2rem" }}>
-      <h1>Simple Web Proxy</h1>
-      <p>Type a website to visit through the proxy.</p>
+      <h1>Starry</h1>
+      <p>Type a website to visit through the prx.</p>
       <form onSubmit={submit} style={{ display: "flex", gap: "0.5rem" }}>
         <input
           value={url}
@@ -67,7 +67,7 @@ export default function Home() {
       <section style={{ marginTop: "2rem", color: "#555" }}>
         <p>
           Note: Some sites use Content Security Policy or advanced scripts that
-          can break when proxied. This app focuses on simple GET requests and
+          can break when prxed. This app focuses on simple GET requests and
           basic HTML rewriting.
         </p>
       </section>
