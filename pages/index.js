@@ -1,16 +1,18 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 export default function Home() {
   const [url, setUrl] = useState("");
-  const [history, setHistory] = useState<string[]>(
-    typeof window !== "undefined"
-      ? JSON.parse(localStorage.getItem("proxyHistory") || "[]")
-      : []
-  );
+  const [history, setHistory] = useState([]);
 
-  const normalize = (raw: string) => {
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const saved = JSON.parse(localStorage.getItem("proxyHistory") || "[]");
+      setHistory(saved);
+    }
+  }, []);
+
+  const normalize = (raw) => {
     try {
-      // Add https if user typed a bare domain
       if (!/^https?:\/\//i.test(raw)) {
         return new URL("https://" + raw).toString();
       }
@@ -20,14 +22,14 @@ export default function Home() {
     }
   };
 
-  const submit = (e: React.FormEvent) => {
+  const submit = (e) => {
     e.preventDefault();
     const n = normalize(url.trim());
     if (!n) {
       alert("Enter a valid URL, e.g. https://example.com");
       return;
     }
-    const updated = [n, ...history.filter(h => h !== n)].slice(0, 8);
+    const updated = [n, ...history.filter((h) => h !== n)].slice(0, 8);
     setHistory(updated);
     localStorage.setItem("proxyHistory", JSON.stringify(updated));
     window.location.href = `/api/proxy?url=${encodeURIComponent(n)}`;
@@ -40,7 +42,7 @@ export default function Home() {
       <form onSubmit={submit} style={{ display: "flex", gap: "0.5rem" }}>
         <input
           value={url}
-          onChange={e => setUrl(e.target.value)}
+          onChange={(e) => setUrl(e.target.value)}
           placeholder="https://example.com"
           style={{ flex: 1, padding: "0.75rem" }}
         />
@@ -53,7 +55,7 @@ export default function Home() {
         <section style={{ marginTop: "1.5rem" }}>
           <h3>Recent</h3>
           <ul>
-            {history.map(h => (
+            {history.map((h) => (
               <li key={h}>
                 <a href={`/api/proxy?url=${encodeURIComponent(h)}`}>{h}</a>
               </li>
